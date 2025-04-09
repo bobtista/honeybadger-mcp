@@ -172,3 +172,24 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+*.swp
+.idea/
+.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
