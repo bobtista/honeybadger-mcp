@@ -31,24 +31,54 @@ Please note that honeybadger-mcp-server requires both a Honeybadger API key and 
 
 ## Installation
 
-### Using uv (recommended)
+### Option 1: Install from PyPI (Recommended)
 
-When using [`uv`](https://docs.astral.sh/uv/) no specific installation is needed. We will
-use [`uvx`](https://docs.astral.sh/uv/guides/tools/) to directly run _honeybadger-mcp-server_.
+You can install using either `uv` (recommended) or `pip`:
 
-### Using PIP
+```bash
+# Using uv (recommended for better dependency management)
+uv pip install honeybadger-mcp-server
 
-Alternatively you can install `honeybadger-mcp-server` via pip:
-
-```
+# Or using pip
 pip install honeybadger-mcp-server
 ```
 
-After installation, you can run it as a script using:
+After installation, you can run the server using either:
 
-```
+```bash
+# Using uvx (recommended)
+uvx honeybadger-mcp-server
+
+# Or using python directly
 python -m honeybadger_mcp_server
 ```
+
+### Option 2: Local Development
+
+For local development, clone this repository and install in development mode:
+
+```bash
+git clone https://github.com/yourusername/honeybadger-mcp
+cd honeybadger-mcp
+
+# Using uv (recommended)
+uv pip install -e .
+
+# Or using pip
+pip install -e .
+```
+
+Then run using either:
+
+```bash
+# Using uv (recommended)
+uv run --directory . -m honeybadger_mcp_server
+
+# Or using python directly
+python -m honeybadger_mcp_server
+```
+
+Note: While `uv` is recommended for better dependency management and isolation, the server will work with standard Python tools as well.
 
 ## Configuration
 
@@ -63,69 +93,89 @@ export HONEYBADGER_PROJECT_ID="your-project-id-here"
 
 Add this to your `claude_desktop_config.json`:
 
-<details>
-<summary>Using uvx</summary>
+#### If installed from PyPI:
 
 ```json
-"mcpServers": {
-  "honeybadger": {
-    "command": "uvx",
-    "args": ["honeybadger-mcp-server"]
+{
+  "mcpServers": {
+    "honeybadger": {
+      "command": "uvx",
+      "args": ["honeybadger-mcp-server"],
+      "env": {
+        "HONEYBADGER_API_KEY": "your-api-key-here",
+        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+      }
+    }
   }
 }
 ```
 
-</details>
-
-<details>
-<summary>Using pip installation</summary>
+#### For local development:
 
 ```json
-"mcpServers": {
-  "honeybadger": {
-    "command": "python",
-    "args": ["-m", "honeybadger_mcp_server"]
+{
+  "mcpServers": {
+    "honeybadger": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/honeybadger-mcp",
+        "-m",
+        "honeybadger_mcp_server"
+      ],
+      "env": {
+        "HONEYBADGER_API_KEY": "your-api-key-here",
+        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+      }
+    }
   }
 }
 ```
-
-</details>
 
 ### Usage with [Zed](https://github.com/zed-industries/zed)
 
 Add to your Zed settings.json:
 
-<details>
-<summary>Using uvx</summary>
-
-```json
-"context_servers": [
-  "honeybadger": {
-    "command": {
-      "path": "uvx",
-      "args": ["honeybadger-mcp-server"]
-    }
-  }
-],
-```
-
-</details>
-
-<details>
-<summary>Using pip installation</summary>
+#### If installed from PyPI:
 
 ```json
 "context_servers": {
-  "honeybadger_mcp_server": {
+  "honeybadger": {
     "command": {
-      "path": "python",
-      "args": ["-m", "honeybadger_mcp_server"]
+      "path": "uvx",
+      "args": ["honeybadger-mcp-server"],
+      "env": {
+        "HONEYBADGER_API_KEY": "your-api-key-here",
+        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+      }
     }
   }
-},
+}
 ```
 
-</details>
+#### For local development:
+
+```json
+"context_servers": {
+  "honeybadger": {
+    "command": {
+      "path": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/honeybadger-mcp",
+        "-m",
+        "honeybadger_mcp_server"
+      ],
+      "env": {
+        "HONEYBADGER_API_KEY": "your-api-key-here",
+        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+      }
+    }
+  }
+}
+```
 
 ## Debugging
 
@@ -147,26 +197,15 @@ help you debug any issues.
 
 ## Development
 
-If you are doing local development, you can test your changes using the MCP inspector or the Claude desktop app.
+If you are doing local development, you can test your changes using the MCP inspector:
 
-For Claude desktop app, add the following to your `claude_desktop_config.json`:
-
-### UVX
-
-```json
-{
-"mcpServers": {
-  "honeybadger": {
-    "command": "uv",
-    "args": [
-      "--directory",
-      "/<path to mcp-servers>/mcp-servers/src/honeybadger",
-      "run",
-      "honeybadger_mcp_server"
-    ]
-  }
-}
+```bash
+# From your project directory
+npx @modelcontextprotocol/inspector -- uv run --directory . -m honeybadger_mcp_server
 ```
+
+Running `tail -n 20 -f ~/Library/Logs/Claude/mcp*.log` will show the logs from the server and may
+help you debug any issues.
 
 ## Docker Support
 
