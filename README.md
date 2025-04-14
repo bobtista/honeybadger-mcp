@@ -11,11 +11,20 @@ This MCP server provides a bridge between AI agents and the Honeybadger error mo
 The server provides two essential tools for interacting with Honeybadger:
 
 1. **`list_faults`**: List and filter faults from your Honeybadger project
+
+   - Search by text query
+   - Filter by creation or occurrence timestamps
+   - Sort by frequency or recency
+   - Paginate results
+
 2. **`get_fault_details`**: Get detailed information about specific faults
+   - Filter notices by creation time
+   - Paginate through notices
+   - Results ordered by creation time descending
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.10+
 - Honeybadger API key and Project ID
 - Docker if running the MCP server as a container (recommended)
 
@@ -32,7 +41,7 @@ The server provides two essential tools for interacting with Honeybadger:
 2. Clone this repository:
 
    ```bash
-   git clone https://github.com/yourusername/honeybadger-mcp.git
+   git clone https://github.com/bobtista/honeybadger-mcp.git
    cd honeybadger-mcp
    ```
 
@@ -42,9 +51,17 @@ The server provides two essential tools for interacting with Honeybadger:
    uv pip install -e .
    ```
 
-4. Create a `.env` file:
+4. Install development dependencies (optional):
+
+   ```bash
+   uv pip install -e ".[dev]"
+   ```
+
+5. Create your environment file:
+
    ```bash
    cp .env.example .env
+   # Edit .env with your configuration
    ```
 
 ### Using Docker (Recommended)
@@ -59,46 +76,64 @@ The server provides two essential tools for interacting with Honeybadger:
 
 ## Configuration
 
-The following environment variables need to be configured:
+You can configure the server using either environment variables or command-line arguments:
 
-| Variable                 | Description                                | Required                   |
-| ------------------------ | ------------------------------------------ | -------------------------- |
-| `HONEYBADGER_API_KEY`    | Your Honeybadger API key                   | Yes                        |
-| `HONEYBADGER_PROJECT_ID` | Your Honeybadger project ID                | Yes                        |
-| `TRANSPORT`              | Transport protocol (sse or stdio)          | No (defaults to sse)       |
-| `HOST`                   | Host to bind to when using SSE transport   | No (defaults to 127.0.0.1) |
-| `PORT`                   | Port to listen on when using SSE transport | No (defaults to 8050)      |
-| `LOG_LEVEL`              | Logging level (INFO, DEBUG, etc.)          | No (defaults to INFO)      |
+| Option     | Env Variable           | CLI Argument | Default   | Description                                |
+| ---------- | ---------------------- | ------------ | --------- | ------------------------------------------ |
+| API Key    | HONEYBADGER_API_KEY    | --api-key    | Required  | Your Honeybadger API key                   |
+| Project ID | HONEYBADGER_PROJECT_ID | --project-id | Required  | Your Honeybadger project ID                |
+| Transport  | TRANSPORT              | --transport  | sse       | Transport protocol (sse or stdio)          |
+| Host       | HOST                   | --host       | 127.0.0.1 | Host to bind to when using SSE transport   |
+| Port       | PORT                   | --port       | 8050      | Port to listen on when using SSE transport |
+| Log Level  | LOG_LEVEL              | --log-level  | INFO      | Logging level (INFO, DEBUG, etc.)          |
 
 ## Running the Server
 
-### Using uv
+### Running with uv (Development)
 
 #### SSE Transport (Default)
 
 ```bash
-# Set TRANSPORT=sse in .env (or omit for default) then:
-uv run src/honeybadger_mcp_server/server.py
+# Using environment variables:
+HONEYBADGER_API_KEY=your-key HONEYBADGER_PROJECT_ID=your-project uv run src/honeybadger_mcp_server/server.py
+
+# Using CLI arguments:
+uv run src/honeybadger_mcp_server/server.py --api-key your-key --project-id your-project
 ```
 
-The server will start as an API endpoint that you can connect to with the configuration shown below.
-
-#### Stdio Transport
+#### Using Stdio
 
 ```bash
-# Set TRANSPORT=stdio in .env then:
-uv run src/honeybadger_mcp_server/server.py
+uv run src/honeybadger_mcp_server/server.py --transport stdio --api-key your-key --project-id your-project
+```
+
+### Running Installed Package
+
+#### SSE Transport (Default)
+
+```bash
+# Using environment variables:
+HONEYBADGER_API_KEY=your-key HONEYBADGER_PROJECT_ID=your-project honeybadger-mcp-server
+
+# Using CLI arguments:
+honeybadger-mcp-server --api-key your-key --project-id your-project
+```
+
+#### Using Stdio
+
+```bash
+honeybadger-mcp-server --transport stdio --api-key your-key --project-id your-project
 ```
 
 ### Using Docker
 
-#### SSE Transport (Default)
+#### Run with SSE
 
 ```bash
 docker run --env-file .env -p 8050:8050 honeybadger/mcp
 ```
 
-#### Stdio Transport
+#### Using Stdio
 
 With stdio, the MCP client itself can spin up the MCP server container, so nothing to run at this point.
 
@@ -119,27 +154,56 @@ Once you have the server running with SSE transport, you can connect to it using
 }
 ```
 
-### Python with Stdio Configuration
+### Claude Desktop Configuration
+
+#### Using SSE Transport (Recommended)
+
+First, start the server:
+
+```bash
+honeybadger-mcp-server --api-key your-key --project-id your-project
+```
+
+Then add to your Claude Desktop config:
 
 ```json
 {
   "mcpServers": {
     "honeybadger": {
-      "command": "your/path/to/honeybadger-mcp/.venv/Scripts/python.exe",
-      "args": [
-        "your/path/to/honeybadger-mcp/src/honeybadger_mcp_server/server.py"
-      ],
-      "env": {
-        "TRANSPORT": "stdio",
-        "HONEYBADGER_API_KEY": "YOUR-API-KEY",
-        "HONEYBADGER_PROJECT_ID": "YOUR-PROJECT-ID"
-      }
+      "transport": "sse",
+      "url": "http://localhost:8050/sse"
     }
   }
 }
 ```
 
-### Docker with Stdio Configuration
+#### Using Stdio Transport
+
+Add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "honeybadger": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/honeybadger-mcp",
+        "src/honeybadger_mcp_server/server.py",
+        "--transport",
+        "stdio",
+        "--api-key",
+        "YOUR-API-KEY",
+        "--project-id",
+        "YOUR-PROJECT-ID"
+      ]
+    }
+  }
+}
+```
+
+### Docker Configuration
 
 ```json
 {
@@ -150,19 +214,14 @@ Once you have the server running with SSE transport, you can connect to it using
         "run",
         "--rm",
         "-i",
-        "-e",
-        "TRANSPORT",
-        "-e",
-        "HONEYBADGER_API_KEY",
-        "-e",
-        "HONEYBADGER_PROJECT_ID",
-        "honeybadger/mcp"
-      ],
-      "env": {
-        "TRANSPORT": "stdio",
-        "HONEYBADGER_API_KEY": "YOUR-API-KEY",
-        "HONEYBADGER_PROJECT_ID": "YOUR-PROJECT-ID"
-      }
+        "honeybadger/mcp",
+        "--transport",
+        "stdio",
+        "--api-key",
+        "YOUR-API-KEY",
+        "--project-id",
+        "YOUR-PROJECT-ID"
+      ]
     }
   }
 }
@@ -174,9 +233,11 @@ Once you have the server running with SSE transport, you can connect to it using
 
 ```python
 result = await client.call_tool("list_faults", {
-    "q": "RuntimeError",  # Optional search term
-    "limit": 10,         # Max 25 results
-    "order": "recent"    # 'recent' or 'frequent'
+    "q": "RuntimeError",           # Optional search term
+    "created_after": 1710806400,  # Unix timestamp (2024-03-19T00:00:00Z)
+    "occurred_after": 1710806400, # Filter by occurrence time
+    "limit": 10,                  # Max 25 results
+    "order": "recent"             # 'recent' or 'frequent'
 })
 ```
 
@@ -185,8 +246,32 @@ result = await client.call_tool("list_faults", {
 ```python
 result = await client.call_tool("get_fault_details", {
     "fault_id": "abc123",
-    "limit": 5  # Number of notices to return (max 25)
+    "created_after": 1710806400,  # Unix timestamp
+    "created_before": 1710892800, # Optional end time
+    "limit": 5                    # Number of notices (max 25)
 })
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+pytest
+```
+
+### Code Quality
+
+```bash
+# Run type checker
+pyright
+
+# Run linter
+ruff check .
 ```
 
 ## Contributing
