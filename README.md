@@ -1,259 +1,194 @@
-# honeybadger-mcp-server: A Honeybadger API MCP Server
+# Honeybadger MCP Server
+
+A Model Context Protocol (MCP) server implementation for interacting with the Honeybadger API. This server allows AI agents to fetch and analyze error data from your Honeybadger projects.
 
 ## Overview
 
-A Model Context Protocol server for interacting with the Honeybadger API. This server provides tools to query error details and fault information from your Honeybadger projects via Large Language Models.
+This MCP server provides a bridge between AI agents and the Honeybadger error monitoring service. It follows the best practices laid out by Anthropic for building MCP servers, allowing seamless integration with any MCP-compatible client.
 
-Please note that honeybadger-mcp-server requires both a Honeybadger API key and Project ID to function. You can obtain these from your [Honeybadger account settings](https://app.honeybadger.io/users/edit).
+## Features
 
-### Tools
+The server provides two essential tools for interacting with Honeybadger:
 
-1. `list_faults`
+1. **`list_faults`**: List and filter faults from your Honeybadger project
+2. **`get_fault_details`**: Get detailed information about specific faults
 
-   - List faults from Honeybadger with optional filtering
-   - Inputs:
-     - `q` (string, optional): A search string
-     - `created_after` (number, optional): Unix timestamp (seconds since epoch)
-     - `occurred_after` (number, optional): Unix timestamp (seconds since epoch)
-     - `occurred_before` (number, optional): Unix timestamp (seconds since epoch)
-     - `limit` (number, optional): Number of results to return (max and default are 25)
-     - `order` (string, optional): Sort order ("recent" or "frequent", default: "recent")
-   - Returns: List of faults matching the criteria
+## Prerequisites
 
-2. `get_fault_details`
-   - Get detailed notice information for a specific fault
-   - Inputs:
-     - `fault_id` (string): The ID of the fault
-     - `created_after` (number, optional): Unix timestamp (seconds since epoch)
-     - `created_before` (number, optional): Unix timestamp (seconds since epoch)
-     - `limit` (number, optional): Number of notices to return (max 25, default: 1)
-   - Returns: Detailed fault notice information
+- Python 3.12+
+- Honeybadger API key and Project ID
+- Docker if running the MCP server as a container (recommended)
 
 ## Installation
 
-### Option 1: Install from PyPI (Recommended)
+### Using uv
 
-You can install using either `uv` (recommended) or `pip`:
+1. Install uv if you don't have it:
 
-```bash
-# Using uv (recommended for better dependency management)
-uv pip install honeybadger-mcp-server
+   ```bash
+   pip install uv
+   ```
 
-# Or using pip
-pip install honeybadger-mcp-server
-```
+2. Clone this repository:
 
-After installation, you can run the server using either:
+   ```bash
+   git clone https://github.com/yourusername/honeybadger-mcp.git
+   cd honeybadger-mcp
+   ```
 
-```bash
-# Using uvx (recommended)
-uvx honeybadger-mcp-server
+3. Install dependencies:
 
-# Or using python directly
-python -m honeybadger_mcp_server
-```
+   ```bash
+   uv pip install -e .
+   ```
 
-### Option 2: Local Development
+4. Create a `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
 
-For local development, clone this repository and install in development mode:
+### Using Docker (Recommended)
 
-```bash
-git clone https://github.com/yourusername/honeybadger-mcp
-cd honeybadger-mcp
+1. Build the Docker image:
 
-# Using uv (recommended)
-uv pip install -e .
+   ```bash
+   docker build -t honeybadger/mcp --build-arg PORT=8050 .
+   ```
 
-# Or using pip
-pip install -e .
-```
-
-Then run using either:
-
-```bash
-# Using uv (recommended)
-uv run --directory . -m honeybadger_mcp_server
-
-# Or using python directly
-python -m honeybadger_mcp_server
-```
-
-Note: While `uv` is recommended for better dependency management and isolation, the server will work with standard Python tools as well.
+2. Create a `.env` file and configure your environment variables
 
 ## Configuration
 
-The server requires both a Honeybadger API key and Project ID to be set in the environment:
+The following environment variables need to be configured:
+
+| Variable                 | Description                                | Required                   |
+| ------------------------ | ------------------------------------------ | -------------------------- |
+| `HONEYBADGER_API_KEY`    | Your Honeybadger API key                   | Yes                        |
+| `HONEYBADGER_PROJECT_ID` | Your Honeybadger project ID                | Yes                        |
+| `TRANSPORT`              | Transport protocol (sse or stdio)          | No (defaults to sse)       |
+| `HOST`                   | Host to bind to when using SSE transport   | No (defaults to 127.0.0.1) |
+| `PORT`                   | Port to listen on when using SSE transport | No (defaults to 8050)      |
+| `LOG_LEVEL`              | Logging level (INFO, DEBUG, etc.)          | No (defaults to INFO)      |
+
+## Running the Server
+
+### Using uv
+
+#### SSE Transport (Default)
 
 ```bash
-export HONEYBADGER_API_KEY="your-api-key-here"
-export HONEYBADGER_PROJECT_ID="your-project-id-here"
+# Set TRANSPORT=sse in .env (or omit for default) then:
+uv run src/honeybadger_mcp_server/server.py
 ```
 
-### Usage with Claude Desktop
+The server will start as an API endpoint that you can connect to with the configuration shown below.
 
-Add this to your `claude_desktop_config.json`:
+#### Stdio Transport
 
-#### If installed from PyPI:
+```bash
+# Set TRANSPORT=stdio in .env then:
+uv run src/honeybadger_mcp_server/server.py
+```
+
+### Using Docker
+
+#### SSE Transport (Default)
+
+```bash
+docker run --env-file .env -p 8050:8050 honeybadger/mcp
+```
+
+#### Stdio Transport
+
+With stdio, the MCP client itself can spin up the MCP server container, so nothing to run at this point.
+
+## Integration with MCP Clients
+
+### SSE Configuration
+
+Once you have the server running with SSE transport, you can connect to it using this configuration:
 
 ```json
 {
   "mcpServers": {
     "honeybadger": {
-      "command": "uvx",
-      "args": ["honeybadger-mcp-server"],
-      "env": {
-        "HONEYBADGER_API_KEY": "your-api-key-here",
-        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
-      }
+      "transport": "sse",
+      "url": "http://localhost:8050/sse"
     }
   }
 }
 ```
 
-#### For local development:
+### Python with Stdio Configuration
 
 ```json
 {
   "mcpServers": {
     "honeybadger": {
-      "command": "uv",
+      "command": "your/path/to/honeybadger-mcp/.venv/Scripts/python.exe",
       "args": [
-        "run",
-        "--directory",
-        "/path/to/honeybadger-mcp",
-        "-m",
-        "honeybadger_mcp_server"
+        "your/path/to/honeybadger-mcp/src/honeybadger_mcp_server/server.py"
       ],
       "env": {
-        "HONEYBADGER_API_KEY": "your-api-key-here",
-        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+        "TRANSPORT": "stdio",
+        "HONEYBADGER_API_KEY": "YOUR-API-KEY",
+        "HONEYBADGER_PROJECT_ID": "YOUR-PROJECT-ID"
       }
     }
   }
 }
 ```
 
-### Usage with [Zed](https://github.com/zed-industries/zed)
-
-Add to your Zed settings.json:
-
-#### If installed from PyPI:
+### Docker with Stdio Configuration
 
 ```json
-"context_servers": {
-  "honeybadger": {
-    "command": {
-      "path": "uvx",
-      "args": ["honeybadger-mcp-server"],
-      "env": {
-        "HONEYBADGER_API_KEY": "your-api-key-here",
-        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
-      }
-    }
-  }
-}
-```
-
-#### For local development:
-
-```json
-"context_servers": {
-  "honeybadger": {
-    "command": {
-      "path": "uv",
+{
+  "mcpServers": {
+    "honeybadger": {
+      "command": "docker",
       "args": [
         "run",
-        "--directory",
-        "/path/to/honeybadger-mcp",
-        "-m",
-        "honeybadger_mcp_server"
+        "--rm",
+        "-i",
+        "-e",
+        "TRANSPORT",
+        "-e",
+        "HONEYBADGER_API_KEY",
+        "-e",
+        "HONEYBADGER_PROJECT_ID",
+        "honeybadger/mcp"
       ],
       "env": {
-        "HONEYBADGER_API_KEY": "your-api-key-here",
-        "HONEYBADGER_PROJECT_ID": "your-project-id-here"
+        "TRANSPORT": "stdio",
+        "HONEYBADGER_API_KEY": "YOUR-API-KEY",
+        "HONEYBADGER_PROJECT_ID": "YOUR-PROJECT-ID"
       }
     }
   }
 }
 ```
 
-## Debugging
+## Tool Usage Examples
 
-You can use the MCP inspector to debug the server. For uvx installations:
+### List Faults
 
-```
-npx @modelcontextprotocol/inspector uvx honeybadger-mcp-server
-```
-
-Or if you've installed the package in a specific directory or are developing on it:
-
-```
-cd path/to/servers/src/honeybadger
-npx @modelcontextprotocol/inspector uv run honeybadger_mcp_server
+```python
+result = await client.call_tool("list_faults", {
+    "q": "RuntimeError",  # Optional search term
+    "limit": 10,         # Max 25 results
+    "order": "recent"    # 'recent' or 'frequent'
+})
 ```
 
-Running `tail -n 20 -f ~/Library/Logs/Claude/mcp*.log` will show the logs from the server and may
-help you debug any issues.
+### Get Fault Details
 
-## Development
-
-If you are doing local development, you can test your changes using the MCP inspector:
-
-```bash
-# From your project directory
-npx @modelcontextprotocol/inspector -- uv run --directory . -m honeybadger_mcp_server
+```python
+result = await client.call_tool("get_fault_details", {
+    "fault_id": "abc123",
+    "limit": 5  # Number of notices to return (max 25)
+})
 ```
 
-Running `tail -n 20 -f ~/Library/Logs/Claude/mcp*.log` will show the logs from the server and may
-help you debug any issues.
+## Contributing
 
-## Docker Support
-
-The MCP server can be run in a Docker container. This provides an isolated environment and makes deployment easier.
-
-### Building the Docker Image
-
-```bash
-# Build the image
-docker build -t honeybadger-mcp-server .
-```
-
-### Running with Docker
-
-```bash
-# Run the container with your Honeybadger credentials
-docker run \
-  -e HONEYBADGER_API_KEY=your_api_key_here \
-  -e HONEYBADGER_PROJECT_ID=your_project_id_here \
-  honeybadger-mcp-server
-
-# Run with custom verbosity level
-docker run \
-  -e HONEYBADGER_API_KEY=your_api_key_here \
-  -e HONEYBADGER_PROJECT_ID=your_project_id_here \
-  honeybadger-mcp-server --verbose
-
-# Run in detached mode
-docker run -d \
-  -e HONEYBADGER_API_KEY=your_api_key_here \
-  -e HONEYBADGER_PROJECT_ID=your_project_id_here \
-  honeybadger-mcp-server
-```
-
-### Environment Variables
-
-The Docker container accepts the following environment variables:
-
-- `HONEYBADGER_API_KEY` (required): Your Honeybadger API key
-- `HONEYBADGER_PROJECT_ID` (required): Your Honeybadger Project ID
-
-### Docker Best Practices
-
-1. Never commit your API key or Project ID in the Dockerfile or docker-compose files
-2. Use environment files or secure secrets management for sensitive credentials
-3. Consider using Docker health checks in production
-4. The container runs as a non-root user for security
-
-## License
-
-This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+Contributions are welcome! Please feel free to submit a Pull Request.
