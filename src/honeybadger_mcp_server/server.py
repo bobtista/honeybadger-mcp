@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -52,11 +53,13 @@ async def honeybadger_lifespan(server: FastMCP) -> AsyncIterator[HoneybadgerCont
         await client.close()
 
 
-# Initialize FastMCP server with lifespan management
+# Initialize FastMCP server with lifespan management and server config
 mcp = FastMCP(
     "mcp-honeybadger",
     description="MCP server for interacting with Honeybadger API",
     lifespan=honeybadger_lifespan,
+    host=os.getenv("HOST", "127.0.0.1"),
+    port=int(os.getenv("PORT", "8050")),
 )
 
 
@@ -184,7 +187,10 @@ async def list_faults(
     params = {k: v for k, v in params.items() if v is not None}
 
     result = await make_request(ctx, "/faults", params)
-    return str(result)
+    return json.dumps(
+        {"error": result["error"]} if "error" in result else {"faults": result},
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -216,21 +222,31 @@ async def get_fault_details(
     params = {k: v for k, v in params.items() if v is not None}
 
     result = await make_request(ctx, f"/faults/{fault_id}/notices", params)
-    return str(result)
+    return json.dumps(
+        {"error": result["error"]} if "error" in result else {"notices": result},
+        indent=2,
+    )
 
 
 async def main():
     """Entry point for the MCP server"""
-    transport = os.getenv("TRANSPORT", "stdio")
+    transport = os.getenv("TRANSPORT", "sse")  # Default to SSE transport
 
-    if transport == "stdio":
-        await mcp.run_stdio_async()
+    if transport == "sse":
+        logger.info(f"Starting server with SSE transport on {mcp.host}:{mcp.port}")
+        await mcp.run_sse_async()
     else:
-        # Default to stdio if transport is not recognized
+        logger.info("Starting server with stdio transport")
         await mcp.run_stdio_async()
 
 
 if __name__ == "__main__":
     import asyncio
+
+    # Configure logging
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
     asyncio.run(main())
