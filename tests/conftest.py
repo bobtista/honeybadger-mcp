@@ -1,141 +1,94 @@
-"""Test configuration and fixtures for Honeybadger MCP server tests."""
+"""Test fixtures for the Honeybadger MCP server."""
 
 import json
-from typing import Dict
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
-from aiohttp import ClientSession
-from mcp.types import TextContent, Tool
+from aiohttp import ClientResponse, ClientSession
+from fastmcp import FastMCP
 
-from honeybadger_mcp_server.server import HoneybadgerTools, Server
+from honeybadger_mcp_server.server import HoneybadgerTools, create_mcp_server
 
 
 @pytest.fixture
 def api_key() -> str:
-    """Return a dummy API key."""
-    return "test_api_key"
+    """Return a dummy API key for testing."""
+    return "test_api_key_12345"
 
 
 @pytest.fixture
 def project_id() -> str:
-    """Return a dummy project ID."""
-    return "test_project_id"
+    """Return a dummy project ID for testing."""
+    return "test_project_67890"
 
 
 @pytest.fixture
-def mock_fault_response() -> Dict:
-    """Return a mock fault list response."""
+def mock_fault_response() -> dict:
+    """Return a mock response for list_faults."""
     return {
         "results": [
             {
                 "id": "12345",
                 "error_class": "RuntimeError",
-                "message": "Test error",
                 "environment": "test",
-                "created_at": "2024-03-20T12:00:00Z",
-                "last_notice_at": "2024-03-20T12:00:00Z",
-                "notices_count": 1,
+                "message": "Test error message",
+                "created_at": "2024-03-19T00:00:00Z",
+                "resolved": False,
             }
         ]
     }
 
 
 @pytest.fixture
-def mock_fault_details_response() -> Dict:
-    """Return a mock fault details response."""
+def mock_fault_details_response() -> dict:
+    """Return a mock response for get_fault_details."""
     return {
         "results": [
             {
                 "id": "67890",
                 "error_class": "RuntimeError",
-                "message": "Test error details",
                 "environment": "test",
-                "created_at": "2024-03-20T12:00:00Z",
+                "message": "Test error details",
+                "created_at": "2024-03-19T00:00:00Z",
                 "backtrace": [{"file": "test.py", "line": 42, "method": "test_method"}],
             }
         ]
     }
 
 
-@pytest_asyncio.fixture
-async def mock_session(mocker, mock_fault_response, mock_fault_details_response):
-    """Create a mock aiohttp session."""
-    mock_response = mocker.AsyncMock()
-    mock_response.status = 200
-    mock_response.json.return_value = mock_fault_response
-    mock_response.text.return_value = "Success"
+@pytest.fixture
+def mock_session(mock_fault_response, mock_fault_details_response):
+    """Create a mock aiohttp session for testing."""
+    session = MagicMock(spec=ClientSession)
 
-    mock_details_response = mocker.AsyncMock()
-    mock_details_response.status = 200
-    mock_details_response.json.return_value = mock_fault_details_response
-    mock_details_response.text.return_value = "Success"
+    async def mock_get(url: str, **kwargs):
+        response = AsyncMock(spec=ClientResponse)
+        response.status = 200
 
-    mock_session = mocker.AsyncMock(spec=ClientSession)
-    mock_context = mocker.AsyncMock()
-    mock_context.__aenter__.side_effect = [mock_response, mock_details_response]
-    mock_session.get.return_value = mock_context
+        if "faults" in url and "notices" not in url:
+            mock_data = mock_fault_response
+        else:
+            mock_data = mock_fault_details_response
 
-    return mock_session
+        async def mock_json():
+            return mock_data
+
+        response.json = mock_json
+        return response
+
+    session.get = mock_get
+    return session
 
 
-@pytest_asyncio.fixture
-async def mcp_server(api_key: str, project_id: str, mocker) -> Server:
-    """Create a test MCP server instance."""
-    server = Server("mcp-honeybadger")
+@pytest.fixture
+def mcp_server(api_key: str, project_id: str, mock_session: ClientSession) -> FastMCP:
+    """Create a test instance of the MCP server."""
+    server = create_mcp_server(project_id, api_key)
 
-    # Register tools
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=HoneybadgerTools.LIST_FAULTS,
-                description="List faults from Honeybadger with optional filtering",
-                inputSchema={"type": "object"},
-            ),
-            Tool(
-                name=HoneybadgerTools.GET_FAULT_DETAILS,
-                description="Get detailed notice information for a specific fault",
-                inputSchema={"type": "object"},
-            ),
-        ]
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict):
-        if name == HoneybadgerTools.LIST_FAULTS:
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "results": [
-                                {
-                                    "id": "12345",
-                                    "error_class": "RuntimeError",
-                                    "environment": "test",
-                                }
-                            ]
-                        }
-                    ),
-                )
-            ]
-        elif name == HoneybadgerTools.GET_FAULT_DETAILS:
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "results": [
-                                {
-                                    "id": "67890",
-                                    "error_class": "RuntimeError",
-                                    "backtrace": [{"file": "test.py", "line": 42}],
-                                }
-                            ]
-                        }
-                    ),
-                )
-            ]
-        return []
+    # Register mock session in the lifespan context
+    server.lifespan_context = MagicMock()
+    server.lifespan_context.client = mock_session
+    server.lifespan_context.api_key = api_key
+    server.lifespan_context.project_id = project_id
 
     return server

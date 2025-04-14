@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from aiohttp import ClientSession
 
-from honeybadger_mcp_server.server import get_fault_details, list_faults
+from honeybadger_mcp_server.api import get_fault_details, list_faults
 
 
 @pytest.mark.asyncio
@@ -18,7 +18,7 @@ async def test_list_faults(
 ):
     """Test listing faults."""
     # Mock make_request
-    mock_make_request = mocker.patch("honeybadger_mcp_server.server.make_request")
+    mock_make_request = mocker.patch("honeybadger_mcp_server.api.make_request")
     mock_make_request.return_value = mock_fault_response
 
     # Use Unix timestamp for created_after (2024-03-19T00:00:00Z)
@@ -81,7 +81,7 @@ async def test_get_fault_details(
 ):
     """Test getting fault details."""
     # Mock make_request
-    mock_make_request = mocker.patch("honeybadger_mcp_server.server.make_request")
+    mock_make_request = mocker.patch("honeybadger_mcp_server.api.make_request")
     mock_make_request.return_value = mock_fault_details_response
 
     # Use Unix timestamp for created_after (2024-03-19T00:00:00Z)
@@ -116,7 +116,7 @@ async def test_list_faults_error(
 ):
     """Test error handling when listing faults."""
     # Mock make_request with error response
-    mock_make_request = mocker.patch("honeybadger_mcp_server.server.make_request")
+    mock_make_request = mocker.patch("honeybadger_mcp_server.api.make_request")
     mock_make_request.return_value = {"error": "HTTP 401 - Unauthorized"}
 
     result = await list_faults(

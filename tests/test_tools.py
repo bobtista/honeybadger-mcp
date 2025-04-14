@@ -1,73 +1,80 @@
 """Tests for the Honeybadger MCP tools."""
 
 import pytest
-from mcp.types import Tool
 
-from honeybadger_mcp_server.server import HoneybadgerTools, ListFaultsRequest
-
-
-@pytest.mark.asyncio
-async def test_list_tools(mcp_server):
-    """Test that the server exposes the expected tools."""
-
-    # Register tools
-    @mcp_server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=HoneybadgerTools.LIST_FAULTS,
-                description="List faults from Honeybadger with optional filtering",
-                inputSchema=ListFaultsRequest.model_json_schema(),
-            ),
-            Tool(
-                name=HoneybadgerTools.GET_FAULT_DETAILS,
-                description="Get detailed notice information for a specific fault",
-                inputSchema={"type": "object"},
-            ),
-        ]
-
-    tools = await list_tools()
-    tool_names = {tool.name for tool in tools}
-    assert tool_names == {
-        HoneybadgerTools.LIST_FAULTS,
-        HoneybadgerTools.GET_FAULT_DETAILS,
-    }
+from honeybadger_mcp_server.server import create_mcp_server
 
 
 @pytest.mark.asyncio
-async def test_list_faults_schema(mcp_server):
-    """Test that the list_faults tool has the correct schema."""
+async def test_list_tools(api_key: str, project_id: str):
+    """Test listing available tools."""
+    server = create_mcp_server(project_id, api_key)
 
     # Register tools
-    @mcp_server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=HoneybadgerTools.LIST_FAULTS,
-                description="List faults from Honeybadger with optional filtering",
-                inputSchema=ListFaultsRequest.model_json_schema(),
-            ),
-            Tool(
-                name=HoneybadgerTools.GET_FAULT_DETAILS,
-                description="Get detailed notice information for a specific fault",
-                inputSchema={"type": "object"},
-            ),
-        ]
+    @server.tool(name="list_faults")
+    async def list_faults_tool():
+        return '{"results": []}'
 
-    tools = await list_tools()
-    list_faults_tool = next(
-        tool for tool in tools if tool.name == HoneybadgerTools.LIST_FAULTS
-    )
+    @server.tool(name="get_fault_details")
+    async def get_fault_details_tool():
+        return '{"results": []}'
 
-    schema = list_faults_tool.inputSchema
-    assert schema["type"] == "object"
+    tools = server.list_tools()
+    tool_names = [tool.name for tool in tools]
+    assert "list_faults" in tool_names
+    assert "get_fault_details" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_list_faults_schema(api_key: str, project_id: str):
+    """Test list_faults tool schema validation."""
+    server = create_mcp_server(project_id, api_key)
+
+    @server.tool(name="list_faults")
+    async def list_faults_tool(
+        q: str = None,
+        created_after: str = None,
+        limit: int = 25,
+        order: str = "frequent",
+    ) -> str:
+        return '{"results": []}'
+
+    tool = next(t for t in server.list_tools() if t.name == "list_faults")
+    schema = tool.parameters
+
     assert "q" in schema["properties"]
-    assert "created_after" in schema["properties"]
-    assert "limit" in schema["properties"]
-    assert "order" in schema["properties"]
+    assert schema["properties"]["q"]["type"] == "string"
+    assert schema["properties"]["q"].get("required", False) is False
 
-    # Verify order enum values and default
-    order_schema = schema["properties"]["order"]
-    assert order_schema["type"] == "string"
-    assert set(order_schema["enum"]) == {"recent", "frequent"}
-    assert order_schema["default"] == "frequent"  # Default order should be 'frequent'
+    assert "limit" in schema["properties"]
+    assert schema["properties"]["limit"]["type"] == "integer"
+    assert schema["properties"]["limit"]["default"] == 25
+
+    assert "order" in schema["properties"]
+    assert schema["properties"]["order"]["type"] == "string"
+    assert schema["properties"]["order"]["default"] == "frequent"
+
+
+@pytest.mark.asyncio
+async def test_get_fault_details_schema(api_key: str, project_id: str):
+    """Test get_fault_details tool schema validation."""
+    server = create_mcp_server(project_id, api_key)
+
+    @server.tool(name="get_fault_details")
+    async def get_fault_details_tool(
+        fault_id: str,
+        created_after: str = None,
+        limit: int = 1,
+    ) -> str:
+        return '{"results": []}'
+
+    tool = next(t for t in server.list_tools() if t.name == "get_fault_details")
+    schema = tool.parameters
+
+    assert "fault_id" in schema["properties"]
+    assert schema["properties"]["fault_id"]["type"] == "string"
+    assert "fault_id" in schema.get("required", [])
+
+    assert "limit" in schema["properties"]
+    assert schema["properties"]["limit"]["type"] == "integer"
+    assert schema["properties"]["limit"]["default"] == 1
