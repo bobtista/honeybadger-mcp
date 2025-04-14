@@ -175,9 +175,7 @@ async def serve(
     server = create_mcp_server(project_id, api_key, host, port)
 
     if transport == "sse":
-        logger.info(
-            f"Starting server with SSE transport on {server.host}:{server.port}"
-        )
+        logger.info(f"Starting server with SSE transport on {host}:{port}")
         await server.run_sse_async()
     else:
         logger.info("Starting server with stdio transport")
