@@ -6,9 +6,8 @@ from enum import Enum
 from typing import Any, AsyncIterator, Dict, Literal, Optional
 
 import aiohttp
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from fastmcp import Context, FastMCP
+from mcp.types import TextContent
 from pydantic import BaseModel, ConfigDict
 
 HONEYBADGER_API_BASE_URL = "https://app.honeybadger.io/v2"
@@ -26,23 +25,22 @@ class HoneybadgerContext:
 
 
 @asynccontextmanager
-async def honeybadger_lifespan(
-    server: Server, project_id: str, api_key: str
-) -> AsyncIterator[HoneybadgerContext]:
+async def honeybadger_lifespan(server: FastMCP) -> AsyncIterator[HoneybadgerContext]:
     """Manage server lifecycle and resources.
 
     Args:
-        server: The MCP server instance
-        project_id: The Honeybadger project ID
-        api_key: The Honeybadger API key
+        server: The FastMCP server instance
 
     Yields:
         HoneybadgerContext: The context containing the shared HTTP client and configuration
     """
+    project_id = os.getenv("HONEYBADGER_PROJECT_ID")
+    api_key = os.getenv("HONEYBADGER_API_KEY")
+
     if not api_key:
-        raise ValueError("Honeybadger API key is required")
+        raise ValueError("HONEYBADGER_API_KEY environment variable is required")
     if not project_id:
-        raise ValueError("Honeybadger Project ID is required")
+        raise ValueError("HONEYBADGER_PROJECT_ID environment variable is required")
 
     # Initialize shared HTTP client on startup with auth
     auth = aiohttp.BasicAuth(login=api_key)
@@ -52,6 +50,14 @@ async def honeybadger_lifespan(
     finally:
         # Ensure client is properly closed on shutdown
         await client.close()
+
+
+# Initialize FastMCP server with lifespan management
+mcp = FastMCP(
+    "mcp-honeybadger",
+    description="MCP server for interacting with Honeybadger API",
+    lifespan=honeybadger_lifespan,
+)
 
 
 # Request Models
@@ -122,25 +128,21 @@ class GetFaultDetailsRequest(BaseModel):
     )
 
 
-class HoneybadgerTools(str, Enum):
-    LIST_FAULTS = "list_faults"
-    GET_FAULT_DETAILS = "get_fault_details"
-
-
 async def make_request(
-    ctx: HoneybadgerContext, endpoint: str, params: Dict[str, Any]
+    ctx: Context, endpoint: str, params: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Make a request to the Honeybadger API using the shared client."""
-    url = f"{HONEYBADGER_API_BASE_URL}/projects/{ctx.project_id}{endpoint}"
+    honeybadger_ctx = ctx.request_context.lifespan_context
+    url = f"{HONEYBADGER_API_BASE_URL}/projects/{honeybadger_ctx.project_id}{endpoint}"
 
     logger.debug(f"Making request to: {url}")
     logger.debug(f"With params: {params}")
     logger.debug(
-        f"Using API key: {ctx.api_key[:4]}..."
+        f"Using API key: {honeybadger_ctx.api_key[:4]}..."
     )  # Only log first 4 chars for security
-    logger.debug(f"Using project ID: {ctx.project_id}")
+    logger.debug(f"Using project ID: {honeybadger_ctx.project_id}")
 
-    async with ctx.client.get(url, params=params) as response:
+    async with honeybadger_ctx.client.get(url, params=params) as response:
         if response.status != 200:
             error_text = await response.text()
             logger.error(f"Error from Honeybadger API: {error_text}")
@@ -149,19 +151,20 @@ async def make_request(
         return await response.json()
 
 
+@mcp.tool()
 async def list_faults(
-    ctx: HoneybadgerContext,
+    ctx: Context,
     q: Optional[str] = None,
     created_after: Optional[int] = None,
     occurred_after: Optional[int] = None,
     occurred_before: Optional[int] = None,
     limit: int = 25,
-    order: Optional[str] = "frequent",
-) -> Dict[str, Any]:
-    """List faults from Honeybadger.
+    order: str = "frequent",
+) -> str:
+    """List faults from Honeybadger with optional filtering.
 
     Args:
-        ctx: Application context with shared resources
+        ctx: The MCP context containing shared resources
         q: Search string to filter faults
         created_after: Unix timestamp to filter faults created after
         occurred_after: Unix timestamp to filter faults that occurred after
@@ -180,20 +183,22 @@ async def list_faults(
     # Remove None values
     params = {k: v for k, v in params.items() if v is not None}
 
-    return await make_request(ctx, "/faults", params)
+    result = await make_request(ctx, "/faults", params)
+    return str(result)
 
 
+@mcp.tool()
 async def get_fault_details(
-    ctx: HoneybadgerContext,
+    ctx: Context,
     fault_id: str,
     created_after: Optional[int] = None,
     created_before: Optional[int] = None,
     limit: int = 1,
-) -> Dict[str, Any]:
+) -> str:
     """Get detailed notice information for a specific fault.
 
     Args:
-        ctx: Application context with shared resources
+        ctx: The MCP context containing shared resources
         fault_id: The fault ID to get details for
         created_after: Unix timestamp to filter notices created after
         created_before: Unix timestamp to filter notices created before
@@ -210,79 +215,19 @@ async def get_fault_details(
     # Remove None values
     params = {k: v for k, v in params.items() if v is not None}
 
-    return await make_request(ctx, f"/faults/{fault_id}/notices", params)
-
-
-async def serve(project_id: str, api_key: str) -> None:
-    """Start the MCP server"""
-    server = Server("mcp-honeybadger")
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=HoneybadgerTools.LIST_FAULTS,
-                description="List faults from Honeybadger with optional filtering",
-                inputSchema=ListFaultsRequest.model_json_schema(),
-            ),
-            Tool(
-                name=HoneybadgerTools.GET_FAULT_DETAILS,
-                description="Get detailed notice information for a specific fault",
-                inputSchema=GetFaultDetailsRequest.model_json_schema(),
-            ),
-        ]
-
-    async with honeybadger_lifespan(server, project_id, api_key) as ctx:
-
-        @server.call_tool()
-        async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-            try:
-                match name:
-                    case HoneybadgerTools.LIST_FAULTS:
-                        request = ListFaultsRequest(**arguments)
-                        result = await list_faults(
-                            ctx,
-                            request.q,
-                            request.created_after,
-                            request.occurred_after,
-                            request.occurred_before,
-                            request.limit,
-                            request.order,
-                        )
-
-                    case HoneybadgerTools.GET_FAULT_DETAILS:
-                        result = await get_fault_details(
-                            ctx,
-                            arguments["fault_id"],
-                            arguments.get("created_after"),
-                            arguments.get("created_before"),
-                            arguments.get("limit", 1),
-                        )
-
-                    case _:
-                        raise ValueError(f"Unknown tool: {name}")
-
-                return [TextContent(type="text", text=str(result))]
-            except Exception as e:
-                logger.error(f"Error processing request: {str(e)}")
-                return [TextContent(type="text", text=str({"error": str(e)}))]
-
-        options = server.create_initialization_options()
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(read_stream, write_stream, options, raise_exceptions=True)
+    result = await make_request(ctx, f"/faults/{fault_id}/notices", params)
+    return str(result)
 
 
 async def main():
     """Entry point for the MCP server"""
-    project_id = os.getenv("HONEYBADGER_PROJECT_ID")
-    api_key = os.getenv("HONEYBADGER_API_KEY")
+    transport = os.getenv("TRANSPORT", "stdio")
 
-    if not project_id or not api_key:
-        raise ValueError(
-            "HONEYBADGER_PROJECT_ID and HONEYBADGER_API_KEY environment variables are required"
-        )
-
-    await serve(project_id, api_key)
+    if transport == "stdio":
+        await mcp.run_stdio_async()
+    else:
+        # Default to stdio if transport is not recognized
+        await mcp.run_stdio_async()
 
 
 if __name__ == "__main__":
