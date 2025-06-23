@@ -81,7 +81,7 @@ def create_mcp_server(
     # Initialize FastMCP server with lifespan management and server config
     server = FastMCP(
         "mcp-honeybadger",
-        description="MCP server for interacting with Honeybadger API",
+        instructions="MCP server for interacting with Honeybadger API",
         lifespan=lambda s: honeybadger_lifespan(s, project_id, api_key),
         host=host,
         port=port,
